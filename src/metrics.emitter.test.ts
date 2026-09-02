@@ -88,3 +88,20 @@ test("commit-and-pr-heuristics", () => {
   assert.equal((adds.get("pi.commit.count") ?? []).length, 1);
   assert.equal((adds.get("pi.pull_request.count") ?? []).length, 1);
 });
+
+test("session-id-distinguishes-runs", () => {
+  const env = {
+    PI_AGENT_ENABLE_TELEMETRY: "1",
+    OTEL_METRICS_INCLUDE_SESSION_ID: "1",
+  };
+  const first = makeEmitter(env);
+  const second = makeEmitter(env);
+  first.emitter.recordSessionStart({ reason: "startup" } as never, "pi-run-one");
+  second.emitter.recordSessionStart({ reason: "startup" } as never, "pi-run-two");
+
+  const firstIds = (first.adds.get("pi.session.count") ?? []).map((add) => add.attrs["session.id"]);
+  const secondIds = (second.adds.get("pi.session.count") ?? []).map((add) => add.attrs["session.id"]);
+  assert.deepEqual(firstIds, ["pi-run-one"], "first run keeps its session id");
+  assert.deepEqual(secondIds, ["pi-run-two"], "second run keeps its session id");
+  assert.notEqual(firstIds[0], secondIds[0], "separate runs must not share a session id");
+});

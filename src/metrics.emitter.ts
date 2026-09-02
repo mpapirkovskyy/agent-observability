@@ -155,10 +155,11 @@ export class MetricsEmitter {
    * derived from the session_start reason.
    *
    * @param event - The session_start lifecycle event.
+   * @param sessionId - Current pi session identifier for gated attributes.
    */
-  recordSessionStart(event: SessionStartEvent): void {
+  recordSessionStart(event: SessionStartEvent, sessionId?: string): void {
     this.sessionCount.add(1, {
-      ...buildStandardAttributes(this.config),
+      ...buildStandardAttributes(this.config, { sessionId }),
       start_type: event.reason,
     });
   }
@@ -168,8 +169,9 @@ export class MetricsEmitter {
    * finalized assistant message's usage. Non-assistant messages are ignored.
    *
    * @param event - The message_end lifecycle event.
+   * @param sessionId - Current pi session identifier for gated attributes.
    */
-  recordMessageEnd(event: MessageEndEvent): void {
+  recordMessageEnd(event: MessageEndEvent, sessionId?: string): void {
     const message = event.message;
     if (!message || (message as { role?: string }).role !== "assistant") return;
     const assistant = message as unknown as {
@@ -185,7 +187,10 @@ export class MetricsEmitter {
     const usage = assistant.usage;
     if (!usage) return;
     const model = assistant.model;
-    const base = { ...buildStandardAttributes(this.config), ...(model ? { model } : {}) };
+    const base = {
+      ...buildStandardAttributes(this.config, { sessionId }),
+      ...(model ? { model } : {}),
+    };
 
     const byType: Array<[string, number]> = [
       ["input", usage.input],
@@ -206,9 +211,10 @@ export class MetricsEmitter {
    * decisions for edit/write, and commit/pull-request heuristics for bash.
    *
    * @param event - The tool_result lifecycle event.
+   * @param sessionId - Current pi session identifier for gated attributes.
    */
-  recordToolResult(event: ToolResultEvent): void {
-    const std = buildStandardAttributes(this.config);
+  recordToolResult(event: ToolResultEvent, sessionId?: string): void {
+    const std = buildStandardAttributes(this.config, { sessionId });
     const toolName = event.toolName;
 
     if (toolName === "edit" || toolName === "write") {
@@ -256,11 +262,14 @@ export class MetricsEmitter {
    * Accumulate active time (pi.active_time.total, seconds) for the elapsed turn.
    *
    * @param timestamp - turn_end timestamp in milliseconds.
+   * @param sessionId - Current pi session identifier for gated attributes.
    */
-  turnEnd(timestamp: number): void {
+  turnEnd(timestamp: number, sessionId?: string): void {
     if (this.turnStartTs === undefined) return;
     const seconds = (timestamp - this.turnStartTs) / 1000;
     this.turnStartTs = undefined;
-    if (seconds > 0) this.activeTime.add(seconds, buildStandardAttributes(this.config));
+    if (seconds > 0) {
+      this.activeTime.add(seconds, buildStandardAttributes(this.config, { sessionId }));
+    }
   }
 }
