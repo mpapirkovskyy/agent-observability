@@ -27,6 +27,7 @@ import {
 } from "@opentelemetry/api";
 
 import type { OtelParityConfig } from "./config.env.ts";
+import { SESSION_ID_ATTRIBUTE } from "./session.attribute.ts";
 
 /** pi.* span name values, mirroring Claude Code's span names one-for-one. */
 const SPAN = {
@@ -115,6 +116,8 @@ export class TracesEmitter {
   private interactionSpan: Span | undefined;
   /** Wall-clock start (ms) of the current interaction, for duration_ms. */
   private interactionStartMs = 0;
+  /** Session identifier captured when the current interaction opens. */
+  private interactionSessionId: string | undefined;
   /** Prompt captured from before_agent_start, applied when the interaction opens. */
   private pendingPrompt: string | undefined;
 
@@ -163,18 +166,22 @@ export class TracesEmitter {
    * Open the pi.interaction span wrapping one user prompt (agent_start). The
    * prompt text rides as an attribute only when OTEL_LOG_USER_PROMPTS is on
    * (FR9); prompt_length is always recorded when a prompt was captured.
+   *
+   * @param sessionId - Current pi session identifier from the lifecycle context.
    */
-  agentStart(): void {
+  agentStart(sessionId?: string): void {
     // Defensive: a prior interaction that never saw agent_end is closed first so
     // spans cannot leak across loops.
     this.closeInteraction();
     this.interactionStartMs = Date.now();
     const span = this.tracer.startSpan(SPAN.interaction, {}, this.childOf(undefined));
+    attr(span, SESSION_ID_ATTRIBUTE, sessionId);
     const prompt = this.pendingPrompt;
     attr(span, "prompt_length", prompt?.length);
     if (this.config.content.userPrompts) attr(span, "user_prompt", prompt);
     this.pendingPrompt = undefined;
     this.interactionSpan = span;
+    this.interactionSessionId = sessionId;
   }
 
   /**
@@ -201,6 +208,7 @@ export class TracesEmitter {
       {},
       this.childOf(this.interactionSpan),
     );
+    attr(this.llmSpan, SESSION_ID_ATTRIBUTE, this.interactionSessionId);
   }
 
   /**
@@ -253,6 +261,7 @@ export class TracesEmitter {
     if (id === undefined) return;
 
     const toolSpan = this.tracer.startSpan(SPAN.tool, {}, this.childOf(this.interactionSpan));
+    attr(toolSpan, SESSION_ID_ATTRIBUTE, this.interactionSessionId);
     attr(toolSpan, "tool_name", event.toolName);
 
     const execSpan = this.tracer.startSpan(
@@ -260,6 +269,7 @@ export class TracesEmitter {
       {},
       this.childOf(toolSpan),
     );
+    attr(execSpan, SESSION_ID_ATTRIBUTE, this.interactionSessionId);
     attr(execSpan, "tool_name", event.toolName);
 
     if (this.config.content.toolContent) {
@@ -330,5 +340,6 @@ export class TracesEmitter {
       this.interactionSpan.end();
       this.interactionSpan = undefined;
     }
+    this.interactionSessionId = undefined;
   }
 }
