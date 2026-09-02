@@ -182,6 +182,10 @@ backend.
 | `OTEL_METRICS_INCLUDE_ENTRYPOINT` | The entrypoint as a metric attribute. |
 | `OTEL_METRICS_INCLUDE_RESOURCE_ATTRIBUTES` | Resource attributes as metric attributes. |
 
+`OTEL_METRICS_INCLUDE_SESSION_ID` is metrics-only. Every emitted log record and
+span carries `session.id` when pi provides a session context, without a
+cardinality opt-in, so trace backends can group a run and logs can be correlated.
+
 ## Content logging and privacy
 
 Every content-logging flag is off by default, so out of the box no prompt,
@@ -230,8 +234,9 @@ underscores, a `_total` suffix on monotonic counters), for example
 | `pi.api_response_body` | `body`/`body_ref` (`OTEL_LOG_RAW_API_BODIES`) | `after_provider_response` |
 | `pi.compaction` | `trigger`, `success`, `pre_tokens`, `post_tokens` | `session_compact` |
 
-All events carry `service.name = pi-coding-agent`. Content-bearing fields are
-omitted unless their opt-in flag is set.
+All events carry `service.name = pi-coding-agent` and `session.id` when pi
+provides a session context. Content-bearing fields are omitted unless their
+opt-in flag is set.
 
 ### Spans (`pi.` namespace)
 
@@ -242,9 +247,9 @@ omitted unless their opt-in flag is set.
 | `pi.tool` | `pi.interaction` | `tool_execution_start` to `tool_execution_end` |
 | `pi.tool.execution` | `pi.tool` | execution portion of a tool call |
 
-Spans carry `gen_ai.*` and `pi.*` attributes. The interaction prompt text is
-gated by `OTEL_LOG_USER_PROMPTS`; tool input and output span events by
-`OTEL_LOG_TOOL_CONTENT`.
+Spans carry `session.id`, `gen_ai.*`, and `pi.*` attributes. The interaction
+prompt text is gated by `OTEL_LOG_USER_PROMPTS`; tool input and output span events
+by `OTEL_LOG_TOOL_CONTENT`.
 
 ## Verify it is exporting
 

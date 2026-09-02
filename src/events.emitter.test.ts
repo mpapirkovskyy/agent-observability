@@ -74,3 +74,25 @@ test("content-gating", () => {
     JSON.stringify({ path: "a.ts" }),
   );
 });
+
+test("session-id-on-every-log-record", () => {
+  const { emitter, records } = makeEmitter({
+    PI_AGENT_ENABLE_TELEMETRY: "1",
+    OTEL_LOG_RAW_API_BODIES: "1",
+  });
+  const sessionId = "log-session";
+
+  emitter.userPrompt({}, sessionId);
+  emitter.messageEnd({ message: { role: "assistant", model: "m" } }, sessionId);
+  emitter.toolResult({ toolName: "write" }, sessionId);
+  emitter.toolDecision({ toolName: "write", decision: "allow" }, sessionId);
+  emitter.apiRequestBody({}, sessionId);
+  emitter.afterProviderResponse({ status: 500 }, sessionId);
+  emitter.compaction({}, sessionId);
+
+  assert.ok(records.length > 0, "test emitted log records");
+  assert.ok(
+    records.every((record) => record.attributes?.["session.id"] === sessionId),
+    "every log record carries the session id",
+  );
+});

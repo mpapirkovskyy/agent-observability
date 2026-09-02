@@ -119,26 +119,26 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   if (providers.loggerProvider) {
     const eventsEmitter = new EventsEmitter(providers.loggerProvider, config);
 
-    pi.on("before_agent_start", (event) => {
-      failSafe(() => eventsEmitter.userPrompt(event));
+    pi.on("before_agent_start", (event, ctx) => {
+      failSafe(() => eventsEmitter.userPrompt(event, ctx.sessionManager.getSessionId()));
     });
-    pi.on("message_end", (event) => {
-      failSafe(() => eventsEmitter.messageEnd(event));
+    pi.on("message_end", (event, ctx) => {
+      failSafe(() => eventsEmitter.messageEnd(event, ctx.sessionManager.getSessionId()));
     });
-    pi.on("tool_result", (event) => {
-      failSafe(() => eventsEmitter.toolResult(event));
+    pi.on("tool_result", (event, ctx) => {
+      failSafe(() => eventsEmitter.toolResult(event, ctx.sessionManager.getSessionId()));
     });
-    pi.on("tool_call", (event) => {
-      failSafe(() => eventsEmitter.toolDecision(event));
+    pi.on("tool_call", (event, ctx) => {
+      failSafe(() => eventsEmitter.toolDecision(event, ctx.sessionManager.getSessionId()));
     });
-    pi.on("before_provider_request", (event) => {
-      failSafe(() => eventsEmitter.apiRequestBody(event));
+    pi.on("before_provider_request", (event, ctx) => {
+      failSafe(() => eventsEmitter.apiRequestBody(event, ctx.sessionManager.getSessionId()));
     });
-    pi.on("after_provider_response", (event) => {
-      failSafe(() => eventsEmitter.afterProviderResponse(event));
+    pi.on("after_provider_response", (event, ctx) => {
+      failSafe(() => eventsEmitter.afterProviderResponse(event, ctx.sessionManager.getSessionId()));
     });
-    pi.on("session_compact", (event) => {
-      failSafe(() => eventsEmitter.compaction(event));
+    pi.on("session_compact", (event, ctx) => {
+      failSafe(() => eventsEmitter.compaction(event, ctx.sessionManager.getSessionId()));
     });
   }
 
@@ -154,8 +154,8 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     pi.on("before_agent_start", (event) => {
       failSafe(() => tracesEmitter.beforeAgentStart(event));
     });
-    pi.on("agent_start", () => {
-      failSafe(() => tracesEmitter.agentStart());
+    pi.on("agent_start", (_event, ctx) => {
+      failSafe(() => tracesEmitter.agentStart(ctx.sessionManager.getSessionId()));
     });
     pi.on("agent_end", () => {
       failSafe(() => tracesEmitter.agentEnd());

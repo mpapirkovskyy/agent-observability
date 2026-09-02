@@ -15,6 +15,7 @@ import { test } from "node:test";
 import { trace, type Context, type Span } from "@opentelemetry/api";
 
 import { loadConfig } from "./config.env.ts";
+import { SESSION_ID_ATTRIBUTE } from "./session.attribute.ts";
 import { TracesEmitter } from "./traces.emitter.ts";
 
 /** A fake span that records its name and lifecycle for assertions. */
@@ -22,6 +23,7 @@ interface FakeSpan extends Span {
   __name: string;
   __ended: boolean;
   __parent?: string;
+  __attributes: Record<string, unknown>;
 }
 
 test("span-nesting", () => {
@@ -33,7 +35,11 @@ test("span-nesting", () => {
         __name: name,
         __ended: false,
         __parent: parent?.__name,
-        setAttribute() { return span; },
+        __attributes: {},
+        setAttribute(key: string, value: unknown) {
+          span.__attributes[key] = value;
+          return span;
+        },
         setAttributes() { return span; },
         addEvent() { return span; },
         setStatus() { return span; },
@@ -50,8 +56,9 @@ test("span-nesting", () => {
 
   const emitter = new TracesEmitter(tracer, loadConfig({ PI_AGENT_ENABLE_TELEMETRY: "1" }));
 
+  const sessionId = "trace-session";
   emitter.beforeAgentStart({ prompt: "hi" });
-  emitter.agentStart();
+  emitter.agentStart(sessionId);
   emitter.llmRequestStart();
   emitter.messageEnd({ message: { role: "assistant", model: "m" } });
   emitter.toolExecutionStart({ toolCallId: "tc1", toolName: "write", args: {} });
@@ -69,6 +76,10 @@ test("span-nesting", () => {
   assert.equal(llm?.__parent, "pi.interaction");
   assert.equal(tool?.__parent, "pi.interaction");
   assert.equal(exec?.__parent, "pi.tool");
+  assert.ok(
+    spans.every((span) => span.__attributes[SESSION_ID_ATTRIBUTE] === sessionId),
+    "every span carries the interaction session id",
+  );
 
   // Every span is closed by the end of the interaction.
   assert.ok(spans.every((s) => s.__ended), "all spans ended");

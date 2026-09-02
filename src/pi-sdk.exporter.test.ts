@@ -344,7 +344,8 @@ test("pi loads the extension and all three signals reach the collector", async (
         assert.ok(loaded.handlers.has("session_start"), "lifecycle handlers registered");
         assert.ok(loaded.handlers.has("agent_end"), "agent_end flush registered");
 
-        await driveInteraction(loaded);
+        const sessionId = "e2e-session";
+        await driveInteraction(loaded, sessionId);
         await waitFor(
           () =>
             receiver.captured.metrics.length > 0 &&
@@ -375,6 +376,12 @@ test("pi loads the extension and all three signals reach the collector", async (
           receiver.bytesFor("traces").includes(Buffer.from("pi.interaction")),
           "traces carry the pi.interaction span",
         );
+
+        for (const signal of ["logs", "traces"] as const) {
+          const bytes = receiver.bytesFor(signal);
+          assert.ok(bytes.includes(Buffer.from("session.id")), `${signal} carry session.id`);
+          assert.ok(bytes.includes(Buffer.from(sessionId)), `${signal} carry ${sessionId}`);
+        }
 
         // Close the exporter channels so the test process has no dangling gRPC
         // connections.

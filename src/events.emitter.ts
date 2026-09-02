@@ -20,6 +20,7 @@ import type { LoggerProvider } from "@opentelemetry/sdk-logs";
 
 import type { OtelParityConfig } from "./config.env.ts";
 import { INSTRUMENTATION_SCOPE } from "./otel.providers.ts";
+import { SESSION_ID_ATTRIBUTE } from "./session.attribute.ts";
 
 /** pi.* log event body values, mirroring Claude Code's event names one-for-one. */
 const EVENT = {
@@ -156,14 +157,24 @@ export class EventsEmitter {
    * @param name - The pi.* event name used as the log body.
    * @param attributes - The structured fields for the event.
    * @param severity - Severity number, INFO by default.
+   * @param sessionId - Current pi session identifier from the lifecycle context.
    */
-  private emit(name: string, attributes: Attrs, severity: SeverityNumber = SeverityNumber.INFO): void {
+  private emit(
+    name: string,
+    attributes: Attrs,
+    severity: SeverityNumber = SeverityNumber.INFO,
+    sessionId?: string,
+  ): void {
+    const recordAttributes =
+      sessionId === undefined
+        ? attributes
+        : { ...attributes, [SESSION_ID_ATTRIBUTE]: sessionId };
     this.logger.emit({
       body: name,
       eventName: name,
       severityNumber: severity,
       severityText: SeverityNumber[severity],
-      attributes,
+      attributes: recordAttributes,
     });
   }
 
@@ -172,13 +183,14 @@ export class EventsEmitter {
    * recorded; the `prompt` text is included only when OTEL_LOG_USER_PROMPTS is on.
    *
    * @param event - The before_agent_start lifecycle event.
+   * @param sessionId - Current pi session identifier from the lifecycle context.
    */
-  userPrompt(event: { prompt?: unknown }): void {
+  userPrompt(event: { prompt?: unknown }, sessionId?: string): void {
     const prompt = typeof event.prompt === "string" ? event.prompt : undefined;
     const attrs: Attrs = {};
     put(attrs, "prompt_length", prompt?.length);
     if (this.config.content.userPrompts) put(attrs, "prompt", prompt);
-    this.emit(EVENT.userPrompt, attrs);
+    this.emit(EVENT.userPrompt, attrs, SeverityNumber.INFO, sessionId);
   }
 
   /**
@@ -194,8 +206,9 @@ export class EventsEmitter {
    * always recorded when present.
    *
    * @param event - The message_end lifecycle event.
+   * @param sessionId - Current pi session identifier from the lifecycle context.
    */
-  messageEnd(event: { message?: unknown; durationMs?: number }): void {
+  messageEnd(event: { message?: unknown; durationMs?: number }, sessionId?: string): void {
     const message = event.message as AssistantMessage | undefined;
     if (!message || message.role !== "assistant") return;
 
@@ -203,7 +216,7 @@ export class EventsEmitter {
       const bodyAttrs: Attrs = {};
       put(bodyAttrs, "model", message.model);
       put(bodyAttrs, "body", serializeBody(message));
-      this.emit(EVENT.apiResponseBody, bodyAttrs);
+      this.emit(EVENT.apiResponseBody, bodyAttrs, SeverityNumber.INFO, sessionId);
     }
 
     const response = extractText(message.content);
@@ -212,7 +225,7 @@ export class EventsEmitter {
       put(responseAttrs, "response_length", response.length);
       put(responseAttrs, "model", message.model);
       if (this.config.content.assistantResponses) put(responseAttrs, "response", response);
-      this.emit(EVENT.assistantResponse, responseAttrs);
+      this.emit(EVENT.assistantResponse, responseAttrs, SeverityNumber.INFO, sessionId);
     }
 
     const usage = message.usage;
@@ -225,14 +238,14 @@ export class EventsEmitter {
     put(apiAttrs, "cache_read_tokens", usage?.cacheRead);
     put(apiAttrs, "cache_creation_tokens", usage?.cacheWrite);
     put(apiAttrs, "cost_usd", usage?.cost?.total);
-    this.emit(EVENT.apiRequest, apiAttrs);
+    this.emit(EVENT.apiRequest, apiAttrs, SeverityNumber.INFO, sessionId);
 
     const stop = message.stopReason ?? message.finishReason;
     if (stop !== undefined && /refus/i.test(stop)) {
       const refusalAttrs: Attrs = {};
       put(refusalAttrs, "model", message.model);
       put(refusalAttrs, "finish_reason", stop);
-      this.emit(EVENT.apiRefusal, refusalAttrs, SeverityNumber.WARN);
+      this.emit(EVENT.apiRefusal, refusalAttrs, SeverityNumber.WARN, sessionId);
     }
   }
 
@@ -242,6 +255,7 @@ export class EventsEmitter {
    * are included only when OTEL_LOG_TOOL_DETAILS is on.
    *
    * @param event - The tool_result lifecycle event.
+   * @param sessionId - Current pi session identifier from the lifecycle context.
    */
   toolResult(event: {
     toolName?: string;
@@ -250,7 +264,7 @@ export class EventsEmitter {
     details?: { durationMs?: number };
     durationMs?: number;
     output?: unknown;
-  }): void {
+  }, sessionId?: string): void {
     const attrs: Attrs = {};
     put(attrs, "tool_name", event.toolName);
     put(attrs, "success", event.isError === undefined ? undefined : !event.isError);
@@ -260,7 +274,7 @@ export class EventsEmitter {
     if (this.config.content.toolDetails) {
       put(attrs, "tool_parameters", serializeBody(event.input));
     }
-    this.emit(EVENT.toolResult, attrs);
+    this.emit(EVENT.toolResult, attrs, SeverityNumber.INFO, sessionId);
   }
 
   /**
@@ -268,13 +282,14 @@ export class EventsEmitter {
    * or rejected and the source of the decision.
    *
    * @param event - The tool_call lifecycle event.
+   * @param sessionId - Current pi session identifier from the lifecycle context.
    */
-  toolDecision(event: { toolName?: string; decision?: string; source?: string }): void {
+  toolDecision(event: { toolName?: string; decision?: string; source?: string }, sessionId?: string): void {
     const attrs: Attrs = {};
     put(attrs, "tool_name", event.toolName);
     put(attrs, "decision", event.decision);
     put(attrs, "source", event.source);
-    this.emit(EVENT.toolDecision, attrs);
+    this.emit(EVENT.toolDecision, attrs, SeverityNumber.INFO, sessionId);
   }
 
   /**
@@ -286,15 +301,19 @@ export class EventsEmitter {
    * payload rather than on the event.
    *
    * @param event - The before_provider_request lifecycle event.
+   * @param sessionId - Current pi session identifier from the lifecycle context.
    */
-  apiRequestBody(event: { payload?: unknown; model?: string; body?: unknown; request?: unknown }): void {
+  apiRequestBody(
+    event: { payload?: unknown; model?: string; body?: unknown; request?: unknown },
+    sessionId?: string,
+  ): void {
     if (!this.config.content.rawApiBodies) return;
     const payload = event.payload ?? event.body ?? event.request;
     const payloadModel = (payload as { model?: unknown } | undefined)?.model;
     const attrs: Attrs = {};
     put(attrs, "model", event.model ?? (typeof payloadModel === "string" ? payloadModel : undefined));
     put(attrs, "body", serializeBody(payload));
-    this.emit(EVENT.apiRequestBody, attrs);
+    this.emit(EVENT.apiRequestBody, attrs, SeverityNumber.INFO, sessionId);
   }
 
   /**
@@ -307,6 +326,7 @@ export class EventsEmitter {
    * message is available.
    *
    * @param event - The after_provider_response lifecycle event.
+   * @param sessionId - Current pi session identifier from the lifecycle context.
    */
   afterProviderResponse(event: {
     model?: string;
@@ -315,7 +335,7 @@ export class EventsEmitter {
     error?: unknown;
     durationMs?: number;
     attempt?: number;
-  }): void {
+  }, sessionId?: string): void {
     const status = event.statusCode ?? event.status;
     const hasError = (status !== undefined && status >= 400) || event.error !== undefined;
     if (!hasError) return;
@@ -326,7 +346,7 @@ export class EventsEmitter {
     put(errorAttrs, "error", errorMessage(event.error));
     put(errorAttrs, "duration_ms", event.durationMs);
     put(errorAttrs, "attempt", event.attempt);
-    this.emit(EVENT.apiError, errorAttrs, SeverityNumber.ERROR);
+    this.emit(EVENT.apiError, errorAttrs, SeverityNumber.ERROR, sessionId);
   }
 
   /**
@@ -334,6 +354,7 @@ export class EventsEmitter {
    * outcome, with its trigger and pre/post token counts.
    *
    * @param event - The session_compact lifecycle event.
+   * @param sessionId - Current pi session identifier from the lifecycle context.
    */
   compaction(event: {
     trigger?: string;
@@ -341,13 +362,13 @@ export class EventsEmitter {
     success?: boolean;
     preTokens?: number;
     postTokens?: number;
-  }): void {
+  }, sessionId?: string): void {
     const attrs: Attrs = {};
     put(attrs, "trigger", event.trigger ?? event.reason);
     put(attrs, "success", event.success);
     put(attrs, "pre_tokens", event.preTokens);
     put(attrs, "post_tokens", event.postTokens);
-    this.emit(EVENT.compaction, attrs);
+    this.emit(EVENT.compaction, attrs, SeverityNumber.INFO, sessionId);
   }
 }
 
