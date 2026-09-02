@@ -223,8 +223,14 @@ async function loadThroughPi(): Promise<LoadedExtension> {
  * @param event - The pi lifecycle event name.
  * @param payload - The synthetic event payload.
  */
-async function fire(loaded: LoadedExtension, event: string, payload: unknown): Promise<void> {
-  for (const handler of loaded.handlers.get(event) ?? []) await handler(payload, {});
+async function fire(
+  loaded: LoadedExtension,
+  event: string,
+  payload: unknown,
+  sessionId = "e2e-session",
+): Promise<void> {
+  const ctx = { sessionManager: { getSessionId: () => sessionId } };
+  for (const handler of loaded.handlers.get(event) ?? []) await handler(payload, ctx);
 }
 
 /**
@@ -236,11 +242,11 @@ async function fire(loaded: LoadedExtension, event: string, payload: unknown): P
  *
  * @param loaded - The loaded extension whose handlers are driven.
  */
-async function driveInteraction(loaded: LoadedExtension): Promise<void> {
-  await fire(loaded, "session_start", { reason: "cli_startup" });
-  await fire(loaded, "before_agent_start", { prompt: "hello telemetry" });
-  await fire(loaded, "agent_start", {});
-  await fire(loaded, "before_provider_request", {});
+async function driveInteraction(loaded: LoadedExtension, sessionId = "e2e-session"): Promise<void> {
+  await fire(loaded, "session_start", { reason: "cli_startup" }, sessionId);
+  await fire(loaded, "before_agent_start", { prompt: "hello telemetry" }, sessionId);
+  await fire(loaded, "agent_start", {}, sessionId);
+  await fire(loaded, "before_provider_request", {}, sessionId);
   await fire(loaded, "message_end", {
     message: {
       role: "assistant",
@@ -249,8 +255,14 @@ async function driveInteraction(loaded: LoadedExtension): Promise<void> {
       content: "hi there",
       usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, cost: { total: 0.01 } },
     },
-  });
-  await fire(loaded, "agent_end", {});
+  }, sessionId);
+  await fire(loaded, "agent_end", {}, sessionId);
+}
+
+/** Drive just the session metric and flush it, keeping the run content-free. */
+async function driveSession(loaded: LoadedExtension, sessionId: string): Promise<void> {
+  await fire(loaded, "session_start", { reason: "startup" }, sessionId);
+  await fire(loaded, "agent_end", {}, sessionId);
 }
 
 /** Reset the global OTel providers so a fresh enabled load registers cleanly. */
@@ -269,6 +281,9 @@ const ENV_KEYS = [
   "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
   "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL",
   "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL",
+  "OTEL_METRICS_INCLUDE_SESSION_ID",
+  "OTEL_LOGS_EXPORTER",
+  "OTEL_TRACES_EXPORTER",
 ];
 
 /**
@@ -364,6 +379,45 @@ test("pi loads the extension and all three signals reach the collector", async (
         // Close the exporter channels so the test process has no dangling gRPC
         // connections.
         await fire(loaded, "session_shutdown", {});
+      },
+    );
+  } finally {
+    receiver.shutdown();
+  }
+});
+
+test("metrics session.id distinguishes separate runs", async () => {
+  const receiver = await startReceiver();
+  const sessionIds = ["pi-run-one", "pi-run-two"];
+  try {
+    await withEnv(
+      {
+        PI_AGENT_ENABLE_TELEMETRY: "1",
+        OTEL_EXPORTER_OTLP_ENDPOINT: `http://127.0.0.1:${receiver.port}`,
+        OTEL_METRICS_INCLUDE_SESSION_ID: "1",
+        OTEL_LOGS_EXPORTER: "none",
+        OTEL_TRACES_EXPORTER: "none",
+      },
+      async () => {
+        const loaded = await loadThroughPi();
+        assert.deepEqual(loaded.errors, [], "pi loaded the extension with no error");
+
+        for (const sessionId of sessionIds) await driveSession(loaded, sessionId);
+        await waitFor(() => receiver.captured.metrics.length > 0);
+
+        const metricBytes = receiver.bytesFor("metrics");
+        assert.ok(
+          receiver.captured.metrics.length > 0,
+          `no metric export arrived; session ids sought: ${sessionIds.join(", ")}`,
+        );
+        for (const sessionId of sessionIds) {
+          assert.ok(
+            metricBytes.includes(Buffer.from(sessionId)),
+            `metric export did not contain session.id ${sessionId}; exports captured: ${receiver.captured.metrics.length}`,
+          );
+        }
+
+        await fire(loaded, "session_shutdown", {}, sessionIds[1]);
       },
     );
   } finally {

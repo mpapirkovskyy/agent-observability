@@ -95,20 +95,20 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   if (providers.meterProvider) {
     const metricsEmitter = new MetricsEmitter(providers.meterProvider, config);
 
-    pi.on("session_start", (event) => {
-      failSafe(() => metricsEmitter.recordSessionStart(event));
+    pi.on("session_start", (event, ctx) => {
+      failSafe(() => metricsEmitter.recordSessionStart(event, ctx.sessionManager.getSessionId()));
     });
-    pi.on("message_end", (event) => {
-      failSafe(() => metricsEmitter.recordMessageEnd(event));
+    pi.on("message_end", (event, ctx) => {
+      failSafe(() => metricsEmitter.recordMessageEnd(event, ctx.sessionManager.getSessionId()));
     });
-    pi.on("tool_result", (event) => {
-      failSafe(() => metricsEmitter.recordToolResult(event));
+    pi.on("tool_result", (event, ctx) => {
+      failSafe(() => metricsEmitter.recordToolResult(event, ctx.sessionManager.getSessionId()));
     });
     pi.on("turn_start", (event) => {
       failSafe(() => metricsEmitter.turnStart(event.timestamp));
     });
-    pi.on("turn_end", (event) => {
-      failSafe(() => metricsEmitter.turnEnd(event.timestamp));
+    pi.on("turn_end", (event, ctx) => {
+      failSafe(() => metricsEmitter.turnEnd(event.timestamp, ctx.sessionManager.getSessionId()));
     });
   }
 

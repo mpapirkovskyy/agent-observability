@@ -9,9 +9,9 @@
  * entrypoint, and the promoted resource attributes). The metrics emitter must
  * apply identical gating (FR10, AC-10) to every instrument, so that logic lives
  * in one pure, testable place here rather than being re-derived per instrument.
- * Values the current pi lifecycle does not surface (for example session id) are
- * simply omitted; the gate still governs whether they would be attached, which is
- * the behaviour parity requires.
+ * Values not supplied by the caller (for example when a lifecycle context is
+ * unavailable) are simply omitted; the gate still governs whether they would be
+ * attached, which is the behaviour parity requires.
  */
 
 import type { Attributes } from "@opentelemetry/api";
