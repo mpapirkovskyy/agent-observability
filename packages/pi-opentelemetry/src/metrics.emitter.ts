@@ -175,6 +175,7 @@ export class MetricsEmitter {
     const message = event.message;
     if (!message || (message as { role?: string }).role !== "assistant") return;
     const assistant = message as unknown as {
+      provider?: string;
       model?: string;
       usage?: {
         input: number;
@@ -187,9 +188,11 @@ export class MetricsEmitter {
     const usage = assistant.usage;
     if (!usage) return;
     const model = assistant.model;
+    const provider = assistant.provider;
     const base = {
       ...buildStandardAttributes(this.config, { sessionId }),
       ...(model ? { model } : {}),
+      ...(provider ? { provider } : {}),
     };
 
     const byType: Array<[string, number]> = [

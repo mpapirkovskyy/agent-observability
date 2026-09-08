@@ -207,8 +207,8 @@ prompt or response text.
 | Instrument | Kind | Attributes | Source lifecycle event |
 |------------|------|------------|------------------------|
 | `pi.session.count` | counter | `start_type` | `session_start` |
-| `pi.token.usage` | counter | `type` (`input`/`output`/`cacheRead`/`cacheCreation`), `model` | `message_end` |
-| `pi.cost.usage` | counter (USD) | `model` | `message_end` |
+| `pi.token.usage` | counter | `type` (`input`/`output`/`cacheRead`/`cacheCreation`), `model`, `provider` | `message_end` |
+| `pi.cost.usage` | counter (USD) | `model`, `provider` | `message_end` |
 | `pi.lines_of_code.count` | counter | `type` (`added`/`removed`) | `tool_result` (edit/write) |
 | `pi.code_edit_tool.decision` | counter | `decision`, `tool_name`, `language` | `tool_call`, `tool_result` |
 | `pi.commit.count` | counter | none | `tool_result` (bash `git commit` heuristic) |
