@@ -41,6 +41,7 @@ test("token-and-cost-from-usage", () => {
   emitter.recordMessageEnd({
     message: {
       role: "assistant",
+      provider: "google",
       model: "gemini-3.5-flash",
       usage: { input: 23, output: 19, cacheRead: 5, cacheWrite: 0, cost: { total: 0.0019 } },
     },
@@ -53,11 +54,13 @@ test("token-and-cost-from-usage", () => {
   assert.equal(byType["cacheRead"], 5);
   assert.equal(byType["cacheCreation"], undefined); // zero is not recorded
   assert.equal(tokens[0]?.attrs.model, "gemini-3.5-flash");
+  assert.equal(tokens[0]?.attrs.provider, "google");
 
   const cost = adds.get("pi.cost.usage") ?? [];
   assert.equal(cost.length, 1);
   assert.equal(cost[0]?.value, 0.0019);
   assert.equal(cost[0]?.attrs.model, "gemini-3.5-flash");
+  assert.equal(cost[0]?.attrs.provider, "google");
 });
 
 test("commit-and-pr-heuristics", () => {

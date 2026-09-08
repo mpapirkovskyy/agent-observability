@@ -250,6 +250,7 @@ async function driveInteraction(loaded: LoadedExtension, sessionId = "e2e-sessio
   await fire(loaded, "message_end", {
     message: {
       role: "assistant",
+      provider: "test-provider",
       model: "test-model",
       id: "resp-1",
       content: "hi there",
@@ -367,6 +368,14 @@ test("pi loads the extension and all three signals reach the collector", async (
         assert.ok(
           receiver.bytesFor("metrics").includes(Buffer.from("pi.session.count")),
           "metrics carry the pi.session.count instrument",
+        );
+        assert.ok(
+          receiver.bytesFor("metrics").includes(Buffer.from("provider")),
+          "usage metrics carry the provider attribute",
+        );
+        assert.ok(
+          receiver.bytesFor("metrics").includes(Buffer.from("test-provider")),
+          "usage metrics carry the provider value",
         );
         assert.ok(
           receiver.bytesFor("logs").includes(Buffer.from("pi.user_prompt")),
